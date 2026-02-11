@@ -16,8 +16,7 @@
   <body>
     <div id="root"></div>
     <script type="module">
-      import { mount, pyodide } from "https://cdn.jsdelivr.net/npm/@stlite/browser@0.83.0/build/stlite.js";
-      await pyodide.loadPackage("pysam");
+      import { mount } from "https://cdn.jsdelivr.net/npm/@stlite/browser@0.83.0/build/stlite.js";
       mount(
         {
           entrypoint: "src/varlociraptor_inspect/app.py",
@@ -31,7 +30,8 @@
             "src/varlociraptor_inspect/__init__.py": {
               url: "./src/varlociraptor_inspect/__init__.py"
             }
-          }
+          },
+          requirements: ["pysam"],
         },
         document.getElementById("root"),
       );
