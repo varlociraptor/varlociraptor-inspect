@@ -1,2 +1,2 @@
-import altair as alt
-import pysam
+import altair as alt  # noqa
+import pysam  # noqa
