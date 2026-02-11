@@ -1,5 +1,9 @@
 import streamlit as st
-import plotting  # noqa
+from varlociraptor_inspect import plotting  # noqa
+
+st.set_page_config(
+    page_title="Varlociraptor Inspect",
+)
 
 st.title("Varlociraptor Inspect")
 st.text("Visual inspection of Varlociraptor VCF records.")
