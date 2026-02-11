@@ -19,13 +19,16 @@
       import { mount } from "https://cdn.jsdelivr.net/npm/@stlite/browser@0.83.0/build/stlite.js";
       mount(
         {
-          entrypoint: "app.py",
+          entrypoint: "src/varlociraptor_inspect/app.py",
           files: {
-            "app.py": {
-              url: "./app.py"
+            "src/varlociraptor_inspect/app.py": {
+              url: "./src/varlociraptor_inspect/app.py"
             },
-            "plotting.py": {
-              url: "./plotting.py"
+            "src/varlociraptor_inspect/plotting.py": {
+              url: "./src/varlociraptor_inspect/plotting.py"
+            },
+            "src/varlociraptor_inspect/__init__.py": {
+              url: "./src/varlociraptor_inspect/__init__.py"
             }
           }
         },
