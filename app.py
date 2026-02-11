@@ -1,4 +1,5 @@
 import streamlit as st
+from . import plotting
 
 st.title("Varlociraptor Inspect")
 st.text("Visual inspection of Varlociraptor VCF records.")
