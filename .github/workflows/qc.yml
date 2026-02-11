@@ -1,4 +1,4 @@
-name: PR Tests
+name: QC
 on:
   push:
     branches:
@@ -6,14 +6,24 @@ on:
   pull_request:
 
 jobs:
-  qc:
+  format-check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: prefix-dev/setup-pixi@v0.9.4
       - run: |
           pixi run ruff format --check --diff
+  style-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: prefix-dev/setup-pixi@v0.9.4
       - run: |
           pixi run ruff check
+  type-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: prefix-dev/setup-pixi@v0.9.4
       - run: |
           pixi run pyrefly check
