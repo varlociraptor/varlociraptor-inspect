@@ -1,22 +1,24 @@
-import altair as alt  # noqa
-import pysam  # noqa
+import altair as alt
 import pandas as pd
 import re
 
 
 def phred_to_prob(phred_value):
     """Convert PHRED score to probability"""
-    if isinstance(phred_value, (tuple, list)):
-        phred_value = phred_value[0]
     return 10 ** (-phred_value / 10)
 
 
 def visualize_event_probabilities(record):
     """Visualize event probabilities from INFO column (PROB_* fields)"""
     prob_data = []
+
     for key, value in record.info.items():
         if key.startswith("PROB_"):
             event_name = key.replace("PROB_", "")
+
+            # Handle tuple/list outside phred_to_prob
+            if isinstance(value, (tuple, list)):
+                value = value[0]
 
             if value == float("inf"):
                 probability = 0.0
@@ -27,16 +29,12 @@ def visualize_event_probabilities(record):
 
     df = pd.DataFrame(prob_data)
 
-    print("\n=== Event Probabilities ===")
-    print(df)
-    print(f"Sum of probabilities: {df['Probability'].sum()}")
-
     chart = (
         alt.Chart(df)
         .mark_bar()
         .encode(
-            x=alt.X("Event:N", title="Event Type"),
-            y=alt.Y("Probability:Q", title="Probability"),
+            x="Event:N",
+            y="Probability:Q",
             tooltip=["Event", alt.Tooltip("Probability:Q", format=".6f")],
         )
         .properties(title="Event Probabilities", width=400, height=300)
@@ -49,66 +47,77 @@ def visualize_allele_frequency_distribution(record, sample_name):
     """Visualize allele frequency distribution (AFD field)"""
     sample = record.samples[sample_name]
 
-    afd = sample["AFD"]
-    af_ml = sample["AF"]
-
-    if isinstance(af_ml, (tuple, list)):
-        af_ml = af_ml[0]
+    # Assume these are always tuples/lists
+    af_ml = sample["AF"][0]
+    afd_entries = sample["AFD"]
 
     afd_data = []
 
-    if isinstance(afd, (tuple, list)):
-        afd_entries = afd
-    else:
-        afd_entries = [afd]
-
+    # Process all distribution points
     for entry in afd_entries:
-        if isinstance(entry, str):
-            parts = entry.split(",")
-            for part in parts:
-                if "=" in part:
-                    freq, phred = part.split("=")
-                    freq = float(freq)
-                    prob = phred_to_prob(float(phred))
-                    is_ml = abs(freq - af_ml) < 0.001
-                    afd_data.append(
-                        {
-                            "Allele Frequency": freq,
-                            "Probability": prob,
-                            "Type": "ML Estimate" if is_ml else "Distribution",
-                        }
-                    )
+        parts = entry.split(",")
+        for part in parts:
+            if "=" in part:
+                freq, phred = part.split("=")
+                freq = float(freq)
+                prob = phred_to_prob(float(phred))
+
+                afd_data.append(
+                    {
+                        "Allele Frequency": freq,
+                        "Probability": prob,
+                        "Type": "Distribution",
+                    }
+                )
+
+    # Explicitly add ML estimate
+    # Find probability at ML frequency, or use 1.0 if not found
+    ml_prob = next(
+        (
+            d["Probability"]
+            for d in afd_data
+            if abs(d["Allele Frequency"] - af_ml) < 0.001
+        ),
+        1.0,
+    )
+
+    afd_data.append(
+        {
+            "Allele Frequency": af_ml,
+            "Probability": ml_prob,
+            "Type": "ML Estimate",
+        }
+    )
 
     df = pd.DataFrame(afd_data)
-    df_distribution = df[df["Type"] == "Distribution"]
-    df_ml = df[df["Type"] == "ML Estimate"]
 
-    base_layer = (
-        alt.Chart(df_distribution)
-        .mark_circle(size=60, opacity=0.7)
-        .encode(
-            x=alt.X("Allele Frequency:Q", title="Allele Frequency"),
-            y=alt.Y("Probability:Q", axis=None),
-            color=alt.value("blue"),
-            tooltip=["Allele Frequency", "Probability", "Type"],
-        )
-    )
-
-    ml_layer = (
-        alt.Chart(df_ml)
-        .mark_circle(size=100, opacity=1.0)
-        .encode(
-            x=alt.X("Allele Frequency:Q", title="Allele Frequency"),
-            y=alt.Y("Probability:Q", axis=None),
-            color=alt.value("red"),
-            tooltip=["Allele Frequency", "Probability", "Type"],
-        )
-    )
-
+    # Single chart with color and size encoding
     chart = (
-        (base_layer + ml_layer)
+        alt.Chart(df)
+        .mark_circle()
+        .encode(
+            x="Allele Frequency:Q",
+            y=alt.Y("Probability:Q", axis=None),
+            color=alt.Color(
+                "Type:N",
+                scale=alt.Scale(
+                    domain=["Distribution", "ML Estimate"], range=["blue", "red"]
+                ),
+            ),
+            size=alt.condition(
+                alt.datum.Type == "ML Estimate", alt.value(100), alt.value(60)
+            ),
+            opacity=alt.condition(
+                alt.datum.Type == "ML Estimate", alt.value(1.0), alt.value(0.7)
+            ),
+            tooltip=[
+                "Allele Frequency",
+                alt.Tooltip("Probability", format=".6f"),
+                "Type",
+            ],
+        )
         .properties(
-            title="Allele Frequency Distribution",
+            title="Allele Frequency Distribution (ML Estimate in Red)",
             width=500,
             height=300,
         )
@@ -152,6 +161,10 @@ def visualize_observations(record, sample_name):
         odds_code = match[1]
         rest = match[2]
 
+        # Fix: Handle multi-digit edit distance
+        edit_match = re.match(r"(\d+)", rest)
+        edit_distance = int(edit_match.group(1)) if edit_match else 0
+
         allele_type = odds_code[0].upper()
         kass = odds_code[1]
 
@@ -179,7 +192,7 @@ def visualize_observations(record, sample_name):
             "Orientation": orientation_map.get(rest[4], rest[4]),
             "Softclip": softclip_map.get(rest[6], rest[6]),
             "Indel": indel_map.get(rest[7], rest[7]),
-            "Edit Distance": int(rest[0]) if rest[0].isdigit() else 0,
+            "Edit Distance": edit_distance,
         }
 
         if allele_type == "A":
@@ -196,8 +209,10 @@ def visualize_observations(record, sample_name):
         "Indel",
         "Edit Distance",
     ]
-    odds_order = ["Equal", "Barely", "Positive", "Strong", "Very Strong"]
-    odds_colors = ["#999999", "#D4EFF7", "#AFDFEE", "#6CC5E0", "#2DACD2"]
+
+    # Fix: Add "None" to posterior odds
+    odds_order = ["None", "Equal", "Barely", "Positive", "Strong", "Very Strong"]
+    odds_colors = ["#AAAAAA", "#999999", "#D4EFF7", "#AFDFEE", "#6CC5E0", "#2DACD2"]
 
     max_count = max(
         sum(o["count"] for o in ref_observations) or 0,
@@ -206,6 +221,7 @@ def visualize_observations(record, sample_name):
 
     def create_panel(observations, allele, show_y_axis=True, show_legend=True):
         rows = []
+
         for obs in observations:
             for metric in metrics:
                 rows.append(
@@ -219,21 +235,24 @@ def visualize_observations(record, sample_name):
 
         df = pd.DataFrame(rows)
 
+        # Determine edit distance domain
         edit_values = (
             df[df["Metric"] == "Edit Distance"]["Category"].astype(int).unique()
         )
+
         edit_domain = None
         if len(edit_values) == 1:
             k = int(edit_values[0])
             edit_domain = [0, k] if k > 0 else [0, 1]
 
+        # Fix: Handle edit_domain type properly
+        if edit_domain is not None:
+            edit_scale = alt.Scale(scheme="reds", domain=edit_domain, reverse=False)
+        else:
+            edit_scale = alt.Scale(scheme="reds", reverse=False)
+
         base = alt.Chart(df).encode(
-            x=alt.X(
-                "Metric:N",
-                sort=metrics,
-                title=None,
-                scale=alt.Scale(paddingInner=0.005, paddingOuter=1),
-            ),
+            x=alt.X("Metric:N", sort=metrics, title=None),
             y=alt.Y(
                 "Count:Q",
                 stack="zero",
@@ -263,18 +282,16 @@ def visualize_observations(record, sample_name):
             .encode(
                 color=alt.Color(
                     "Category:Q",
-                    scale=alt.Scale(scheme="reds", domain=edit_domain, reverse=False),
-                    legend=(
-                        alt.Legend(
-                            title="Edit distance",
-                            type="gradient",
-                            gradientLength=100,
-                            gradientThickness=10,
-                            tickCount=5,
-                        )
-                        if show_legend
-                        else None
-                    ),
+                    scale=edit_scale,
+                    legend=alt.Legend(
+                        title="Edit distance",
+                        type="gradient",
+                        gradientLength=100,
+                        gradientThickness=10,
+                        tickCount=5,
+                    )
+                    if show_legend
+                    else None,
                 )
             )
         )
