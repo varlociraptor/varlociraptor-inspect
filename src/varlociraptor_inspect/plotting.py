@@ -1,11 +1,15 @@
 import altair as alt  # noqa
 import pysam  # noqa
+import pandas as pd
+import re
+
 
 def phred_to_prob(phred_value):
     """Convert PHRED score to probability"""
     if isinstance(phred_value, (tuple, list)):
         phred_value = phred_value[0]
     return 10 ** (-phred_value / 10)
+
 
 def visualize_event_probabilities(record):
     """Visualize event probabilities from INFO column (PROB_* fields)"""
@@ -23,7 +27,7 @@ def visualize_event_probabilities(record):
 
     df = pd.DataFrame(prob_data)
 
-    print(f"\n=== Event Probabilities ===")
+    print("\n=== Event Probabilities ===")
     print(df)
     print(f"Sum of probabilities: {df['Probability'].sum()}")
 
@@ -114,6 +118,7 @@ def visualize_allele_frequency_distribution(record, sample_name):
 
     return chart
 
+
 def visualize_observations(record, sample_name):
     """Visualize observations from OBS field"""
     sample = record.samples[sample_name]
@@ -128,8 +133,17 @@ def visualize_observations(record, sample_name):
     matches = re.findall(pattern, obs_string)
 
     strand_map = {"+": "Forward strand", "-": "Reverse strand", "*": "Both strands"}
-    read_pos_map = {"^": "Most common position", "*": "Other position", ".": "Irrelevant position"}
-    orientation_map = {">": "F1R2 orientation", "<": "F2R1 orientation", "*": "Unknown orientation", "!": "Non-standard orientation"}
+    read_pos_map = {
+        "^": "Most common position",
+        "*": "Other position",
+        ".": "Irrelevant position",
+    }
+    orientation_map = {
+        ">": "F1R2 orientation",
+        "<": "F2R1 orientation",
+        "*": "Unknown orientation",
+        "!": "Non-standard orientation",
+    }
     softclip_map = {"$": "Soft clipped", ".": "No soft clipping"}
     indel_map = {"*": "Contains indel", ".": "No indel"}
 
@@ -142,8 +156,18 @@ def visualize_observations(record, sample_name):
         kass = odds_code[1]
 
         kr_names = {
-            "N": "None", "E": "Equal", "B": "Barely", "P": "Positive", "S": "Strong", "V": "Very Strong",
-            "n": "None", "e": "Equal", "b": "Barely", "p": "Positive", "s": "Strong", "v": "Very Strong",
+            "N": "None",
+            "E": "Equal",
+            "B": "Barely",
+            "P": "Positive",
+            "S": "Strong",
+            "V": "Very Strong",
+            "n": "None",
+            "e": "Equal",
+            "b": "Barely",
+            "p": "Positive",
+            "s": "Strong",
+            "v": "Very Strong",
         }
 
         obs_entry = {
@@ -163,7 +187,15 @@ def visualize_observations(record, sample_name):
         else:
             ref_observations.append(obs_entry)
 
-    metrics = ["Posterior Odds", "Strand", "Read Position", "Orientation", "Softclip", "Indel", "Edit Distance"]
+    metrics = [
+        "Posterior Odds",
+        "Strand",
+        "Read Position",
+        "Orientation",
+        "Softclip",
+        "Indel",
+        "Edit Distance",
+    ]
     odds_order = ["Equal", "Barely", "Positive", "Strong", "Very Strong"]
     odds_colors = ["#999999", "#D4EFF7", "#AFDFEE", "#6CC5E0", "#2DACD2"]
 
@@ -187,7 +219,9 @@ def visualize_observations(record, sample_name):
 
         df = pd.DataFrame(rows)
 
-        edit_values = df[df["Metric"] == "Edit Distance"]["Category"].astype(int).unique()
+        edit_values = (
+            df[df["Metric"] == "Edit Distance"]["Category"].astype(int).unique()
+        )
         edit_domain = None
         if len(edit_values) == 1:
             k = int(edit_values[0])
@@ -229,11 +263,7 @@ def visualize_observations(record, sample_name):
             .encode(
                 color=alt.Color(
                     "Category:Q",
-                    scale=alt.Scale(
-                scheme='reds',
-                domain=edit_domain,
-                reverse=False 
-            ),
+                    scale=alt.Scale(scheme="reds", domain=edit_domain, reverse=False),
                     legend=(
                         alt.Legend(
                             title="Edit distance",
@@ -251,7 +281,8 @@ def visualize_observations(record, sample_name):
 
         other_layer = (
             base.transform_filter(
-                (alt.datum.Metric != "Posterior Odds") & (alt.datum.Metric != "Edit Distance")
+                (alt.datum.Metric != "Posterior Odds")
+                & (alt.datum.Metric != "Edit Distance")
             )
             .mark_bar(size=18)
             .encode(
@@ -278,4 +309,3 @@ def visualize_observations(record, sample_name):
         .configure_view(strokeWidth=0)
         .configure_axis(grid=False)
     )
-
