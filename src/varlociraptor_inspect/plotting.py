@@ -16,47 +16,41 @@ def visualize_event_probabilities(record):
         if key.startswith("PROB_"):
             event_name = key.replace("PROB_", "")
 
-            # Handle tuple/list outside phred_to_prob
             if isinstance(value, (tuple, list)):
                 value = value[0]
 
-            if value == float("inf"):
-                probability = 0.0
-            else:
-                probability = phred_to_prob(value)
+            probability = 0.0 if value == float("inf") else phred_to_prob(value)
 
             prob_data.append({"Event": event_name, "Probability": probability})
 
     df = pd.DataFrame(prob_data)
 
-    chart = (
+    return (
         alt.Chart(df)
         .mark_bar()
         .encode(
-            x="Event:N",
-            y="Probability:Q",
-            tooltip=["Event", alt.Tooltip("Probability:Q", format=".6f")],
+            alt.X("Event:N"),
+            alt.Y("Probability:Q"),
+            tooltip=[
+                "Event",
+                alt.Tooltip("Probability:Q", format=".6f"),
+            ],
         )
         .properties(title="Event Probabilities", width=400, height=300)
     )
-
-    return chart
 
 
 def visualize_allele_frequency_distribution(record, sample_name):
     """Visualize allele frequency distribution (AFD field)"""
     sample = record.samples[sample_name]
 
-    # Assume these are always tuples/lists
     af_ml = sample["AF"][0]
     afd_entries = sample["AFD"]
 
     afd_data = []
 
-    # Process all distribution points
     for entry in afd_entries:
-        parts = entry.split(",")
-        for part in parts:
+        for part in entry.split(","):
             if "=" in part:
                 freq, phred = part.split("=")
                 freq = float(freq)
@@ -70,8 +64,6 @@ def visualize_allele_frequency_distribution(record, sample_name):
                     }
                 )
 
-    # Explicitly add ML estimate
-    # Find probability at ML frequency, or use 1.0 if not found
     ml_prob = next(
         (
             d["Probability"]
@@ -91,28 +83,38 @@ def visualize_allele_frequency_distribution(record, sample_name):
 
     df = pd.DataFrame(afd_data)
 
-    # Single chart with color and size encoding
-    chart = (
+    return (
         alt.Chart(df)
         .mark_circle()
         .encode(
-            x="Allele Frequency:Q",
-            y=alt.Y("Probability:Q", axis=None),
-            color=alt.Color(
+            alt.X("Allele Frequency:Q"),
+            alt.Y("Probability:Q", axis=None),
+            alt.Color(
                 "Type:N",
                 scale=alt.Scale(
-                    domain=["Distribution", "ML Estimate"], range=["blue", "red"]
+                    domain=["Distribution", "ML Estimate"],
+                    range=["blue", "red"],
                 ),
             ),
-            size=alt.condition(
-                alt.datum.Type == "ML Estimate", alt.value(100), alt.value(60)
+            alt.Size(
+                "Type:N",
+                scale=alt.Scale(
+                    domain=["Distribution", "ML Estimate"],
+                    range=[60, 100],
+                ),
+                legend=None,
             ),
-            opacity=alt.condition(
-                alt.datum.Type == "ML Estimate", alt.value(1.0), alt.value(0.7)
+            alt.Opacity(
+                "Type:N",
+                scale=alt.Scale(
+                    domain=["Distribution", "ML Estimate"],
+                    range=[0.7, 1.0],
+                ),
+                legend=None,
             ),
             tooltip=[
                 "Allele Frequency",
-                alt.Tooltip("Probability", format=".6f"),
+                alt.Tooltip("Probability:Q", format=".6f"),
                 "Type",
             ],
         )
@@ -125,8 +127,6 @@ def visualize_allele_frequency_distribution(record, sample_name):
         .configure_axis(grid=False)
     )
 
-    return chart
-
 
 def visualize_observations(record, sample_name):
     """Visualize observations from OBS field"""
@@ -138,7 +138,8 @@ def visualize_observations(record, sample_name):
     ref_observations = []
     alt_observations = []
 
-    pattern = r"(\d+)([a-zA-Z]{2})(.{8})"
+    # Pattern: COUNT + 2-letter odds + 8 single chars + ".."
+    pattern = r"(\d+)([a-zA-Z]{2})(.)(.)(.)(.)(.)(.)(.)(.)"
     matches = re.findall(pattern, obs_string)
 
     strand_map = {"+": "Forward strand", "-": "Reverse strand", "*": "Both strands"}
@@ -159,11 +160,14 @@ def visualize_observations(record, sample_name):
     for idx, match in enumerate(matches):
         count = int(match[0])
         odds_code = match[1]
-        rest = match[2]
 
-        # Fix: Handle multi-digit edit distance
-        edit_match = re.match(r"(\d+)", rest)
-        edit_distance = int(edit_match.group(1)) if edit_match else 0
+        # 8 fields from the match
+        edit_distance_char = match[2]
+        strand = match[5]
+        orientation = match[6]
+        read_position = match[7]
+        softclip = match[8]
+        indel = match[9]
 
         allele_type = odds_code[0].upper()
         kass = odds_code[1]
@@ -183,15 +187,22 @@ def visualize_observations(record, sample_name):
             "v": "Very Strong",
         }
 
+        # Convert edit distance
+        edit_distance = (
+            0
+            if edit_distance_char == "."
+            else (int(edit_distance_char) if edit_distance_char.isdigit() else 0)
+        )
+
         obs_entry = {
             "obs_index": idx,
             "count": count,
             "Posterior Odds": kr_names.get(kass, kass),
-            "Strand": strand_map.get(rest[3], rest[3]),
-            "Read Position": read_pos_map.get(rest[5], rest[5]),
-            "Orientation": orientation_map.get(rest[4], rest[4]),
-            "Softclip": softclip_map.get(rest[6], rest[6]),
-            "Indel": indel_map.get(rest[7], rest[7]),
+            "Strand": strand_map.get(strand, strand),
+            "Read Position": read_pos_map.get(read_position, read_position),
+            "Orientation": orientation_map.get(orientation, orientation),
+            "Softclip": softclip_map.get(softclip, softclip),
+            "Indel": indel_map.get(indel, indel),
             "Edit Distance": edit_distance,
         }
 
@@ -210,7 +221,6 @@ def visualize_observations(record, sample_name):
         "Edit Distance",
     ]
 
-    # Fix: Add "None" to posterior odds
     odds_order = ["None", "Equal", "Barely", "Positive", "Strong", "Very Strong"]
     odds_colors = ["#AAAAAA", "#999999", "#D4EFF7", "#AFDFEE", "#6CC5E0", "#2DACD2"]
 
@@ -220,8 +230,18 @@ def visualize_observations(record, sample_name):
     )
 
     def create_panel(observations, allele, show_y_axis=True, show_legend=True):
-        rows = []
+        if not observations:
+            return (
+                alt.Chart(pd.DataFrame({"Metric": [], "Count": []}))
+                .mark_bar()
+                .properties(
+                    width=220,
+                    height=400,
+                    title=f"{allele} Allele Observations (No Data)",
+                )
+            )
 
+        rows = []
         for obs in observations:
             for metric in metrics:
                 rows.append(
@@ -235,32 +255,30 @@ def visualize_observations(record, sample_name):
 
         df = pd.DataFrame(rows)
 
-        # Determine edit distance domain
         edit_values = (
             df[df["Metric"] == "Edit Distance"]["Category"].astype(int).unique()
         )
-
         edit_domain = None
         if len(edit_values) == 1:
             k = int(edit_values[0])
             edit_domain = [0, k] if k > 0 else [0, 1]
 
-        # Fix: Handle edit_domain type properly
-        if edit_domain is not None:
-            edit_scale = alt.Scale(scheme="reds", domain=edit_domain, reverse=False)
-        else:
-            edit_scale = alt.Scale(scheme="reds", reverse=False)
+        edit_scale = (
+            alt.Scale(scheme="reds", domain=edit_domain)
+            if edit_domain
+            else alt.Scale(scheme="reds")
+        )
 
         base = alt.Chart(df).encode(
-            x=alt.X("Metric:N", sort=metrics, title=None),
-            y=alt.Y(
+            alt.X("Metric:N", sort=metrics, title=None),
+            alt.Y(
                 "Count:Q",
                 stack="zero",
                 scale=alt.Scale(domain=[0, max_count]),
                 title="Count" if show_y_axis else None,
                 axis=None if not show_y_axis else alt.Axis(),
             ),
-            order="obs_index:Q",
+            alt.Order("obs_index:Q"),
             tooltip=["Metric", "Category", "Count"],
         )
 
@@ -268,7 +286,7 @@ def visualize_observations(record, sample_name):
             base.transform_filter(alt.datum.Metric == "Posterior Odds")
             .mark_bar(size=18)
             .encode(
-                color=alt.Color(
+                alt.Color(
                     "Category:N",
                     scale=alt.Scale(domain=odds_order, range=odds_colors),
                     legend=alt.Legend(title="Posterior Odds") if show_legend else None,
@@ -280,18 +298,10 @@ def visualize_observations(record, sample_name):
             base.transform_filter(alt.datum.Metric == "Edit Distance")
             .mark_bar(size=18)
             .encode(
-                color=alt.Color(
+                alt.Color(
                     "Category:Q",
                     scale=edit_scale,
-                    legend=alt.Legend(
-                        title="Edit distance",
-                        type="gradient",
-                        gradientLength=100,
-                        gradientThickness=10,
-                        tickCount=5,
-                    )
-                    if show_legend
-                    else None,
+                    legend=alt.Legend(title="Edit distance") if show_legend else None,
                 )
             )
         )
@@ -303,7 +313,7 @@ def visualize_observations(record, sample_name):
             )
             .mark_bar(size=18)
             .encode(
-                color=alt.Color(
+                alt.Color(
                     "Category:N",
                     legend=alt.Legend(title="Category") if show_legend else None,
                 )
@@ -311,9 +321,7 @@ def visualize_observations(record, sample_name):
         )
 
         return (odds_layer + edit_layer + other_layer).properties(
-            width=220,
-            height=400,
-            title=f"{allele} Allele Observations",
+            width=220, height=400, title=f"{allele} Allele Observations"
         )
 
     ref_chart = create_panel(ref_observations, "REF", True, False)
