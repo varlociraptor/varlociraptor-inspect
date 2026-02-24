@@ -21,15 +21,21 @@
         {
           entrypoint: "src/varlociraptor_inspect/app.py",
           files: {
-            "src/varlociraptor_inspect/app.py": {
-              url: "./src/varlociraptor_inspect/app.py"
+            "src/app.py": {
+              url: "./src/app.py"
             },
             "src/varlociraptor_inspect/plotting.py": {
               url: "./src/varlociraptor_inspect/plotting.py"
             },
             "src/varlociraptor_inspect/__init__.py": {
               url: "./src/varlociraptor_inspect/__init__.py"
-            }
+            },
+            "src/varlociraptor_inspect/views/__init__.py": {
+              url: "./src/varlociraptor_inspect/views/__init__.py"
+            },
+            "src/varlociraptor_inspect/views/main.py": {
+              url: "./src/varlociraptor_inspect/views/main.py"
+            },
           },
           requirements: ["pysam"],
           streamlitConfig: {
