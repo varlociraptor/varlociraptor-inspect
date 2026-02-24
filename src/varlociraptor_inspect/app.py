@@ -1,3 +1,6 @@
+import sys
+print(sys.path)
+
 import streamlit as st
 from varlociraptor_inspect import plotting  # noqa
 
