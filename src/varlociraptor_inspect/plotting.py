@@ -1,11 +1,12 @@
-import altair as alt  # noqa
-import pysam  # noqa
+import altair as alt
 import pandas as pd
 import re
 
 
 def phred_to_prob(phred_value):
     """Convert PHRED score to probability"""
+    if phred_value is None:
+        return None
     return 10 ** (-phred_value / 10)
 
 
@@ -17,8 +18,12 @@ def visualize_event_probabilities(record):
         if key.startswith("PROB_"):
             event_name = key.replace("PROB_", "")
 
-            if isinstance(value, (tuple, list)):
-                value = value[0]
+            # Handle tuple/list outside phred_to_prob
+            if len(value) != 1:
+                raise ValueError(
+                    f"Unexpected number of values for {key} (expected: 1, found: {len(value)})"
+                )
+            value = value[0]
 
             probability = 0.0 if value == float("inf") else phred_to_prob(value)
 
@@ -45,11 +50,13 @@ def visualize_allele_frequency_distribution(record, sample_name):
     """Visualize allele frequency distribution (AFD field)"""
     sample = record.samples[sample_name]
 
+    # Assume these are always tuples/lists
     af_ml = sample["AF"][0]
     afd_entries = sample["AFD"]
 
     afd_data = []
 
+    # Process all distribution points
     for entry in afd_entries:
         for part in entry.split(","):
             if "=" in part:
@@ -65,6 +72,8 @@ def visualize_allele_frequency_distribution(record, sample_name):
                     }
                 )
 
+    # Explicitly add ML estimate
+    # Find probability at ML frequency, or use 1.0 if not found
     ml_prob = next(
         (
             d["Probability"]
@@ -134,12 +143,19 @@ def visualize_observations(record, sample_name):
     sample = record.samples[sample_name]
     obs = sample["OBS"]
 
-    obs_string = obs[0] if isinstance(obs, (tuple, list)) and obs else obs
+    if len(obs) != 1:
+        raise ValueError(
+            f"Unexpected number of string values for OBS (expected: 1, found: {len(obs)})"
+        )
+    obs_string = obs[0]
+    # TODO maybe the check for "." is not needed (pysam should recognize that as missing value).
+    if obs_string is None or obs_string == ".":
+        obs_string = ""
 
     ref_observations = []
     alt_observations = []
 
-    # Pattern: COUNT + 2-letter odds + 8 single chars + ".."
+    # Pattern: COUNT + 2-letter odds + 8 single chars
     pattern = r"(\d+)([a-zA-Z]{2})(.)(.)(.)(.)(.)(.)(.)(.)"
     matches = re.findall(pattern, obs_string)
 
@@ -256,6 +272,7 @@ def visualize_observations(record, sample_name):
 
         df = pd.DataFrame(rows)
 
+        # Determine edit distance domain
         edit_values = (
             df[df["Metric"] == "Edit Distance"]["Category"].astype(int).unique()
         )
@@ -280,7 +297,7 @@ def visualize_observations(record, sample_name):
                 axis=None if not show_y_axis else alt.Axis(),
             ),
             alt.Order("obs_index:Q"),
-            tooltip=["Metric", "Category", "Count"],
+            alt.Tooltip(["Metric", "Category", "Count"]),
         )
 
         odds_layer = (
