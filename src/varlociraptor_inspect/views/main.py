@@ -2,6 +2,7 @@ import streamlit as st
 import pysam
 import tempfile
 import os
+import re
 from varlociraptor_inspect import plotting
 
 
@@ -22,20 +23,70 @@ def main_view():
         try:
             # Check if header is included
             if not record_text.startswith("##fileformat"):
-                # No header - add a dummy header
-                # Extract contig from first data line
+                # No header - generate from the data line
                 lines = record_text.strip().split("\n")
-                contig = "chr1"
+
+                # Find the column header line (#CHROM) and data line
+                column_header = None
+                data_line = None
+
                 for line in lines:
-                    if not line.startswith("#"):
-                        contig = line.split("\t")[0]
+                    if line.startswith("#CHROM"):
+                        column_header = line
+                    elif not line.startswith("#") and line.strip():
+                        data_line = line
                         break
 
-                # Add minimal header
-                header = f"""##fileformat=VCFv4.2
-##contig=<ID={contig}>
-"""
-                record_text = header + record_text
+                if data_line:
+                    fields = data_line.split("\t")
+                    chrom = fields[0]
+                    pos = int(fields[1])
+                    info_field = fields[7] if len(fields) > 7 else ""
+
+                    # Extract all PROB_ fields from INFO column
+                    prob_fields = re.findall(r"PROB_(\w+)=", info_field)
+
+                    # Generate VCF header
+                    header_lines = [
+                        "##fileformat=VCFv4.2",
+                        f"##contig=<ID={chrom},length={pos + 1000}>",
+                    ]
+
+                    # Add PROB_ INFO fields (Number=. to allow multiple values)
+                    for prob_field in prob_fields:
+                        header_lines.append(
+                            f"##INFO=<ID=PROB_{prob_field},Number=.,Type=Float>"
+                        )
+
+                    # Add standard Varlociraptor FORMAT fields
+                    format_fields = [
+                        "##FORMAT=<ID=DP,Number=1,Type=Integer>",
+                        "##FORMAT=<ID=AF,Number=1,Type=Float>",
+                        "##FORMAT=<ID=AFD,Number=.,Type=String>",
+                        "##FORMAT=<ID=OBS,Number=1,Type=String>",
+                        "##FORMAT=<ID=HINTS,Number=.,Type=String>",
+                    ]
+                    header_lines.extend(format_fields)
+
+                    # Generate column header if not present
+                    if not column_header:
+                        num_samples = (
+                            len(fields) - 9
+                        )  # Subtract the 9 fixed VCF columns
+                        sample_names = [f"sample{i + 1}" for i in range(num_samples)]
+                        column_header = (
+                            "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t"
+                            + "\t".join(sample_names)
+                        )
+
+                    # Assemble complete VCF
+                    record_text = (
+                        "\n".join(header_lines)
+                        + "\n"
+                        + column_header
+                        + "\n"
+                        + data_line
+                    )
 
             # Write to temp file
             tmp_fd, tmp_path = tempfile.mkstemp(suffix=".vcf", text=True)

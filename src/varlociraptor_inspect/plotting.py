@@ -19,7 +19,7 @@ def visualize_event_probabilities(record):
             event_name = key.replace("PROB_", "")
 
             # Handle tuple/list outside phred_to_prob
-            if len(value) != 1:
+            """if len(value) != 1:
                 raise ValueError(
                     f"Unexpected number of values for {key} (expected: 1, found: {len(value)})"
                 )
@@ -27,8 +27,22 @@ def visualize_event_probabilities(record):
 
             probability = 0.0 if value == float("inf") else phred_to_prob(value)
 
-            prob_data.append({"Event": event_name, "Probability": probability})
+            prob_data.append({"Event": event_name, "Probability": probability})"""
+            # Get first value if it's a sequence
+            if hasattr(value, "__iter__") and not isinstance(value, str):
+                if len(value) == 0:
+                    continue
+                value = value[0]
 
+            # Convert to float if it's a string (happens when header is missing)
+            if isinstance(value, str):
+                try:
+                    value = float(value)
+                except ValueError:
+                    continue
+
+            probability = 0.0 if value == float("inf") else phred_to_prob(value)
+            prob_data.append({"Event": event_name, "Probability": probability})
     df = pd.DataFrame(prob_data)
 
     return (
@@ -50,9 +64,21 @@ def visualize_allele_frequency_distribution(record, sample_name):
     """Visualize allele frequency distribution (AFD field)"""
     sample = record.samples[sample_name]
 
-    # Assume these are always tuples/lists
-    af_ml = sample["AF"][0]
+    # Get AF - convert to float if needed
+    af_ml = sample["AF"]
+    if isinstance(af_ml, str):
+        af_ml = float(af_ml)
+    elif hasattr(af_ml, "__getitem__"):  # It's indexable (list/tuple)
+        af_ml = af_ml[0]
+        if isinstance(af_ml, str):
+            af_ml = float(af_ml)
+
+    # Get AFD entries
     afd_entries = sample["AFD"]
+    if isinstance(afd_entries, str):
+        afd_entries = [afd_entries]
+    elif not hasattr(afd_entries, "__iter__"):
+        afd_entries = [afd_entries]
 
     afd_data = []
 
@@ -143,12 +169,15 @@ def visualize_observations(record, sample_name):
     sample = record.samples[sample_name]
     obs = sample["OBS"]
 
-    if len(obs) != 1:
-        raise ValueError(
-            f"Unexpected number of string values for OBS (expected: 1, found: {len(obs)})"
-        )
-    obs_string = obs[0]
-    # TODO maybe the check for "." is not needed (pysam should recognize that as missing value).
+    # Handle OBS - get the string value
+    if isinstance(obs, str):
+        obs_string = obs
+    elif hasattr(obs, "__getitem__"):  # It's indexable
+        obs_string = obs[0]
+    else:
+        obs_string = str(obs)
+
+    # Handle None or missing values
     if obs_string is None or obs_string == ".":
         obs_string = ""
 
@@ -342,8 +371,26 @@ def visualize_observations(record, sample_name):
             width=220, height=400, title=f"{allele} Allele Observations"
         )
 
-    ref_chart = create_panel(ref_observations, "REF", True, False)
-    alt_chart = create_panel(alt_observations, "ALT", True, True)
+    has_ref = len(ref_observations) > 0
+    has_alt = len(alt_observations) > 0
+
+    # Show legend on right panel if both have data, otherwise on whichever panel has data
+    if has_ref and has_alt:
+        # Both have data - show legend only on ALT (right side)
+        ref_chart = create_panel(ref_observations, "REF", True, False)
+        alt_chart = create_panel(alt_observations, "ALT", True, True)
+    elif has_ref and not has_alt:
+        # Only REF has data - show legend on REF
+        ref_chart = create_panel(ref_observations, "REF", True, True)
+        alt_chart = create_panel(alt_observations, "ALT", True, False)
+    elif has_alt and not has_ref:
+        # Only ALT has data - show legend on ALT
+        ref_chart = create_panel(ref_observations, "REF", True, False)
+        alt_chart = create_panel(alt_observations, "ALT", True, True)
+    else:  # This should NOT be indented extra!
+        # Neither has data
+        ref_chart = create_panel(ref_observations, "REF", True, False)
+        alt_chart = create_panel(alt_observations, "ALT", True, False)
 
     return (
         alt.hconcat(ref_chart, alt_chart, spacing=10)
