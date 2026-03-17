@@ -270,6 +270,36 @@ def visualize_observations(record, sample_name):
     odds_order = ["None", "Equal", "Barely", "Positive", "Strong", "Very Strong"]
     odds_colors = ["#AAAAAA", "#999999", "#D4EFF7", "#AFDFEE", "#6CC5E0", "#2DACD2"]
 
+    # Define color mappings for categorical variables
+    strand_colors = {
+        "Forward strand": "#1f77b4",
+        "Reverse strand": "#ff7f0e",
+        "Both strands": "#2ca02c",
+    }
+
+    read_pos_colors = {
+        "Most common position": "#d62728",
+        "Other position": "#9467bd",
+        "Irrelevant position": "#8c564b",
+    }
+
+    orientation_colors = {
+        "F1R2 orientation": "#e377c2",
+        "F2R1 orientation": "#7f7f7f",
+        "Unknown orientation": "#bcbd22",
+        "Non-standard orientation": "#17becf",
+    }
+
+    softclip_colors = {
+        "Soft clipped": "#ff9896",
+        "No soft clipping": "#c5b0d5",
+    }
+
+    indel_colors = {
+        "Contains indel": "#c49c94",
+        "No indel": "#f7b6d2",
+    }
+
     max_count = max(
         sum(o["count"] for o in ref_observations) or 0,
         sum(o["count"] for o in alt_observations) or 0,
@@ -362,11 +392,22 @@ def visualize_observations(record, sample_name):
             .encode(
                 alt.Color(
                     "Category:N",
+                    scale=alt.Scale(
+                        domain=list(strand_colors.keys())
+                        + list(read_pos_colors.keys())
+                        + list(orientation_colors.keys())
+                        + list(softclip_colors.keys())
+                        + list(indel_colors.keys()),
+                        range=list(strand_colors.values())
+                        + list(read_pos_colors.values())
+                        + list(orientation_colors.values())
+                        + list(softclip_colors.values())
+                        + list(indel_colors.values()),
+                    ),
                     legend=alt.Legend(title="Category") if show_legend else None,
                 )
             )
         )
-
         return (odds_layer + edit_layer + other_layer).properties(
             width=220, height=400, title=f"{allele} Allele Observations"
         )
