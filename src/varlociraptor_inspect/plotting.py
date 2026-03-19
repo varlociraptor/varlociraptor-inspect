@@ -1,6 +1,7 @@
 import altair as alt
 import pandas as pd
 import re
+from typing import Sequence
 
 
 def phred_to_prob(phred_value):
@@ -18,18 +19,8 @@ def visualize_event_probabilities(record):
         if key.startswith("PROB_"):
             event_name = key.replace("PROB_", "")
 
-            # Handle tuple/list outside phred_to_prob
-            """if len(value) != 1:
-                raise ValueError(
-                    f"Unexpected number of values for {key} (expected: 1, found: {len(value)})"
-                )
-            value = value[0]
-
-            probability = 0.0 if value == float("inf") else phred_to_prob(value)
-
-            prob_data.append({"Event": event_name, "Probability": probability})"""
             # Get first value if it's a sequence
-            if hasattr(value, "__iter__") and not isinstance(value, str):
+            if isinstance(value, Sequence) and not isinstance(value, str):
                 if len(value) == 0:
                     continue
                 value = value[0]
@@ -68,7 +59,7 @@ def visualize_allele_frequency_distribution(record, sample_name):
     af_ml = sample["AF"]
     if isinstance(af_ml, str):
         af_ml = float(af_ml)
-    elif hasattr(af_ml, "__getitem__"):  # It's indexable (list/tuple)
+    elif isinstance(af_ml, Sequence):
         af_ml = af_ml[0]
         if isinstance(af_ml, str):
             af_ml = float(af_ml)
@@ -77,7 +68,7 @@ def visualize_allele_frequency_distribution(record, sample_name):
     afd_entries = sample["AFD"]
     if isinstance(afd_entries, str):
         afd_entries = [afd_entries]
-    elif not hasattr(afd_entries, "__iter__"):
+    elif not isinstance(afd_entries, Sequence):
         afd_entries = [afd_entries]
 
     afd_data = []
@@ -172,7 +163,7 @@ def visualize_observations(record, sample_name):
     # Handle OBS - get the string value
     if isinstance(obs, str):
         obs_string = obs
-    elif hasattr(obs, "__getitem__"):  # It's indexable
+    elif isinstance(obs, Sequence):
         obs_string = obs[0]
     else:
         obs_string = str(obs)
