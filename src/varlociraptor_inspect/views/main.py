@@ -70,14 +70,30 @@ def main_view():
 
                     # Generate column header if not present
                     if not column_header:
-                        num_samples = (
-                            len(fields) - 9
-                        )  # Subtract the 9 fixed VCF columns
-                        sample_names = [f"sample{i + 1}" for i in range(num_samples)]
-                        column_header = (
-                            "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t"
-                            + "\t".join(sample_names)
-                        )
+                        if len(fields) < 8:
+                            raise ValueError(
+                                "VCF record must have at least 8 tab-separated columns"
+                            )
+
+                        columns = [
+                            "#CHROM",
+                            "POS",
+                            "ID",
+                            "REF",
+                            "ALT",
+                            "QUAL",
+                            "FILTER",
+                            "INFO",
+                        ]
+
+                        if len(fields) > 8:
+                            num_samples = len(fields) - 9
+                            sample_names = [
+                                f"sample{i + 1}" for i in range(num_samples)
+                            ]
+                            columns.extend(["FORMAT", *sample_names])
+
+                        column_header = "\t".join(columns)
 
                     # Assemble complete VCF
                     record_text = (
@@ -94,20 +110,25 @@ def main_view():
                 with os.fdopen(tmp_fd, "w") as tmp:
                     tmp.write(record_text)
 
-                # Parse with context manager
                 with pysam.VariantFile(tmp_path) as vcf:
                     record = next(vcf)
                     sample_names = list(record.samples.keys())
 
-                    st.success(
-                        f"Successfully parsed VCF record at {record.chrom}:{record.pos} with {len(sample_names)} sample(s)"
+                st.success(
+                    f"Successfully parsed VCF record at {record.chrom}:{record.pos} with {len(sample_names)} sample(s)"
+                )
+
+                # Display Event Probabilities
+                st.header("Event Probabilities")
+                chart1 = plotting.visualize_event_probabilities(record)
+                st.altair_chart(chart1, use_container_width=True)
+
+                # Only show sample plots if samples exist
+                if len(sample_names) == 0:
+                    st.warning(
+                        "No sample columns found. Only Event Probabilities are shown."
                     )
-
-                    # Display Event Probabilities
-                    st.header("Event Probabilities")
-                    chart1 = plotting.visualize_event_probabilities(record)
-                    st.altair_chart(chart1, use_container_width=True)
-
+                else:
                     # Display plots for each sample
                     for idx, sample_name in enumerate(sample_names, 1):
                         st.divider()

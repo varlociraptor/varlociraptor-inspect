@@ -55,58 +55,71 @@ def visualize_allele_frequency_distribution(record, sample_name):
     """Visualize allele frequency distribution (AFD field)"""
     sample = record.samples[sample_name]
 
-    # Get AF - convert to float if needed
+    # Get AF - handle missing values first
     af_ml = sample["AF"]
-    if isinstance(af_ml, str):
+    if af_ml is None:
+        af_ml = 0.5  # Default value
+    elif isinstance(af_ml, str):
         af_ml = float(af_ml)
     elif isinstance(af_ml, Sequence):
-        af_ml = af_ml[0]
+        af_ml = af_ml[0] if af_ml and af_ml[0] is not None else 0.5
         if isinstance(af_ml, str):
             af_ml = float(af_ml)
 
-    # Get AFD entries
+    # Get AFD entries - handle missing values
     afd_entries = sample["AFD"]
-    if isinstance(afd_entries, str):
+    if afd_entries is None:
+        afd_entries = []
+    elif isinstance(afd_entries, str):
         afd_entries = [afd_entries]
     elif not isinstance(afd_entries, Sequence):
         afd_entries = [afd_entries]
 
-    afd_data = []
+    afd_data = []  # Initialize BEFORE using it
 
-    # Process all distribution points
-    for entry in afd_entries:
-        for part in entry.split(","):
-            if "=" in part:
-                freq, phred = part.split("=")
-                freq = float(freq)
-                prob = phred_to_prob(float(phred))
+    # Handle case when AFD is empty
+    if not afd_entries:
+        # No AFD data, just use the AF value
+        afd_data.append(
+            {
+                "Allele Frequency": af_ml,
+                "Probability": 1.0,
+                "Type": "ML Estimate",
+            }
+        )
+    else:
+        # Process all distribution points
+        for entry in afd_entries:
+            for part in entry.split(","):
+                if "=" in part:
+                    freq, phred = part.split("=")
+                    freq = float(freq)
+                    prob = phred_to_prob(float(phred))
 
-                afd_data.append(
-                    {
-                        "Allele Frequency": freq,
-                        "Probability": prob,
-                        "Type": "Distribution",
-                    }
-                )
+                    afd_data.append(
+                        {
+                            "Allele Frequency": freq,
+                            "Probability": prob,
+                            "Type": "Distribution",
+                        }
+                    )
 
-    # Explicitly add ML estimate
-    # Find probability at ML frequency, or use 1.0 if not found
-    ml_prob = next(
-        (
-            d["Probability"]
-            for d in afd_data
-            if abs(d["Allele Frequency"] - af_ml) < 0.001
-        ),
-        1.0,
-    )
-
-    afd_data.append(
-        {
-            "Allele Frequency": af_ml,
-            "Probability": ml_prob,
-            "Type": "ML Estimate",
-        }
-    )
+        # Add ML estimate
+        ml_prob = next(
+            (
+                d["Probability"]
+                for d in afd_data
+                if abs(d["Allele Frequency"] - af_ml) < 0.001
+            ),
+            1.0,
+        )
+        afd_data.append(
+            {
+                "Allele Frequency": af_ml,
+                "Probability": ml_prob,
+                "Type": "ML Estimate",
+            }
+        )
 
     df = pd.DataFrame(afd_data)
 
