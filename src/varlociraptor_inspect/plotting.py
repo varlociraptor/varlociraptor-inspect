@@ -55,18 +55,24 @@ def visualize_allele_frequency_distribution(record, sample_name):
     """Visualize allele frequency distribution (AFD field)"""
     sample = record.samples[sample_name]
 
-    # Get AF - handle missing values first
+    # Get AF - handle missing values and conversion errors
     af_ml = sample["AF"]
     if af_ml is None:
         af_ml = 0.5  # Default value
     elif isinstance(af_ml, str):
-        af_ml = float(af_ml)
+        try:
+            af_ml = float(af_ml)
+        except (ValueError, TypeError):
+            af_ml = 0.5
     elif isinstance(af_ml, Sequence):
         af_ml = af_ml[0] if af_ml and af_ml[0] is not None else 0.5
         if isinstance(af_ml, str):
-            af_ml = float(af_ml)
+            try:
+                af_ml = float(af_ml)
+            except (ValueError, TypeError):
+                af_ml = 0.5
 
-    # Get AFD entries - handle missing values
+    # Get AFD entries - handle None explicitly
     afd_entries = sample["AFD"]
     if afd_entries is None:
         afd_entries = []
@@ -177,7 +183,10 @@ def visualize_observations(record, sample_name):
     if isinstance(obs, str):
         obs_string = obs
     elif isinstance(obs, Sequence):
-        obs_string = obs[0]
+        if len(obs) == 0:
+            obs_string = ""
+        else:
+            obs_string = obs[0]
     else:
         obs_string = str(obs)
 
