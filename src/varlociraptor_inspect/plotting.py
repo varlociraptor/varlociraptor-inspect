@@ -55,25 +55,29 @@ def visualize_allele_frequency_distribution(record, sample_name):
     """Visualize allele frequency distribution (AFD field)"""
     sample = record.samples[sample_name]
 
-    # Get AF - handle missing values and conversion errors
-    af_ml = sample["AF"]
+    # Get AF - use .get() for safe access
+    af_ml = sample.get("AF")
     if af_ml is None:
-        af_ml = 0.5  # Default value
-    elif isinstance(af_ml, str):
+        # If AF is missing, skip the plot
+        return None
+
+    if isinstance(af_ml, str):
         try:
             af_ml = float(af_ml)
         except (ValueError, TypeError):
-            af_ml = 0.5
+            return None
     elif isinstance(af_ml, Sequence):
-        af_ml = af_ml[0] if af_ml and af_ml[0] is not None else 0.5
+        af_ml = af_ml[0] if af_ml and af_ml[0] is not None else None
+        if af_ml is None:
+            return None
         if isinstance(af_ml, str):
             try:
                 af_ml = float(af_ml)
             except (ValueError, TypeError):
-                af_ml = 0.5
+                return None
 
-    # Get AFD entries - handle None explicitly
-    afd_entries = sample["AFD"]
+    # Get AFD entries - use .get() for safe access
+    afd_entries = sample.get("AFD")
     if afd_entries is None:
         afd_entries = []
     elif isinstance(afd_entries, str):
@@ -81,51 +85,47 @@ def visualize_allele_frequency_distribution(record, sample_name):
     elif not isinstance(afd_entries, Sequence):
         afd_entries = [afd_entries]
 
-    afd_data = []  # Initialize BEFORE using it
+    afd_data = []
 
-    # Handle case when AFD is empty
-    if not afd_entries:
-        # No AFD data, just use the AF value
-        afd_data.append(
-            {
-                "Allele Frequency": af_ml,
-                "Probability": 1.0,
-                "Type": "ML Estimate",
-            }
-        )
-    else:
-        # Process all distribution points
-        for entry in afd_entries:
-            for part in entry.split(","):
-                if "=" in part:
-                    freq, phred = part.split("=")
-                    freq = float(freq)
-                    prob = phred_to_prob(float(phred))
+    # Process all distribution points with error handling
+    for entry in afd_entries:
+        if not isinstance(entry, str):
+            continue
+        for part in entry.split(","):
+            if "=" not in part:
+                continue
+            try:
+                freq, phred = part.split("=")
+                freq = float(freq)
+                prob = phred_to_prob(float(phred))
+                afd_data.append(
+                    {
+                        "Allele Frequency": freq,
+                        "Probability": prob,
+                        "Type": "Distribution",
+                    }
+                )
+            except (ValueError, TypeError):
+                # Skip malformed entries
+                continue
 
-                    afd_data.append(
-                        {
-                            "Allele Frequency": freq,
-                            "Probability": prob,
-                            "Type": "Distribution",
-                        }
-                    )
+    # Explicitly add ML estimate
+    ml_prob = next(
+        (
+            d["Probability"]
+            for d in afd_data
+            if abs(d["Allele Frequency"] - af_ml) < 0.001
+        ),
+        1.0,
+    )
 
-        # Add ML estimate
-        ml_prob = next(
-            (
-                d["Probability"]
-                for d in afd_data
-                if abs(d["Allele Frequency"] - af_ml) < 0.001
-            ),
-            1.0,
-        )
-        afd_data.append(
-            {
-                "Allele Frequency": af_ml,
-                "Probability": ml_prob,
-                "Type": "ML Estimate",
-            }
-        )
+    afd_data.append(
+        {
+            "Allele Frequency": af_ml,
+            "Probability": ml_prob,
+            "Type": "ML Estimate",
+        }
+    )
 
     df = pd.DataFrame(afd_data)
 
@@ -177,7 +177,7 @@ def visualize_allele_frequency_distribution(record, sample_name):
 def visualize_observations(record, sample_name):
     """Visualize observations from OBS field"""
     sample = record.samples[sample_name]
-    obs = sample["OBS"]
+    obs = sample.get("OBS")
 
     # Handle OBS - get the string value
     if isinstance(obs, str):
@@ -231,6 +231,12 @@ def visualize_observations(record, sample_name):
         allele_type = odds_code[0].upper()
         kass = odds_code[1]
 
+        # Determine MAPQ from case of kass character
+        if kass.isupper():
+            mapq = "High MAPQ"
+        else:
+            mapq = "Low MAPQ"
+
         kr_names = {
             "N": "None",
             "E": "Equal",
@@ -256,7 +262,8 @@ def visualize_observations(record, sample_name):
         obs_entry = {
             "obs_index": idx,
             "count": count,
-            "Posterior Odds": kr_names.get(kass, kass),
+            "Posterior Odds": kr_names.get(kass, kass.upper()),
+            "MAPQ": mapq,
             "Strand": strand_map.get(strand, strand),
             "Read Position": read_pos_map.get(read_position, read_position),
             "Orientation": orientation_map.get(orientation, orientation),
@@ -272,6 +279,7 @@ def visualize_observations(record, sample_name):
 
     metrics = [
         "Posterior Odds",
+        "MAPQ",
         "Strand",
         "Read Position",
         "Orientation",
@@ -284,6 +292,11 @@ def visualize_observations(record, sample_name):
     odds_colors = ["#AAAAAA", "#999999", "#D4EFF7", "#AFDFEE", "#6CC5E0", "#2DACD2"]
 
     # Define color mappings for categorical variables
+    mapq_colors = {
+        "High MAPQ": "#4575b4",  # Blueish
+        "Low MAPQ": "#d73027",  # Reddish
+    }
+
     strand_colors = {
         "Forward strand": "#1f77b4",
         "Reverse strand": "#ff7f0e",
@@ -384,6 +397,21 @@ def visualize_observations(record, sample_name):
             )
         )
 
+        mapq_layer = (
+            base.transform_filter(alt.datum.Metric == "MAPQ")
+            .mark_bar(size=18)
+            .encode(
+                alt.Color(
+                    "Category:N",
+                    scale=alt.Scale(
+                        domain=list(mapq_colors.keys()),
+                        range=list(mapq_colors.values()),
+                    ),
+                    legend=alt.Legend(title="MAPQ") if show_legend else None,
+                )
+            )
+        )
+
         edit_layer = (
             base.transform_filter(alt.datum.Metric == "Edit Distance")
             .mark_bar(size=18)
@@ -399,6 +427,7 @@ def visualize_observations(record, sample_name):
         other_layer = (
             base.transform_filter(
                 (alt.datum.Metric != "Posterior Odds")
+                & (alt.datum.Metric != "MAPQ")
                 & (alt.datum.Metric != "Edit Distance")
             )
             .mark_bar(size=18)
@@ -421,7 +450,8 @@ def visualize_observations(record, sample_name):
                 )
             )
         )
-        return (odds_layer + edit_layer + other_layer).properties(
+
+        return (odds_layer + mapq_layer + edit_layer + other_layer).properties(
             width=220, height=400, title=f"{allele} Allele Observations"
         )
 
@@ -441,7 +471,7 @@ def visualize_observations(record, sample_name):
         # Only ALT has data - show legend on ALT
         ref_chart = create_panel(ref_observations, "REF", True, False)
         alt_chart = create_panel(alt_observations, "ALT", True, True)
-    else:  # This should NOT be indented extra!
+    else:
         # Neither has data
         ref_chart = create_panel(ref_observations, "REF", True, False)
         alt_chart = create_panel(alt_observations, "ALT", True, False)
