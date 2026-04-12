@@ -55,27 +55,6 @@ def visualize_allele_frequency_distribution(record, sample_name):
     """Visualize allele frequency distribution (AFD field)"""
     sample = record.samples[sample_name]
 
-    # Get AF - use .get() for safe access
-    af_ml = sample.get("AF")
-    if af_ml is None:
-        # If AF is missing, skip the plot
-        return None
-
-    if isinstance(af_ml, str):
-        try:
-            af_ml = float(af_ml)
-        except (ValueError, TypeError):
-            return None
-    elif isinstance(af_ml, Sequence):
-        af_ml = af_ml[0] if af_ml and af_ml[0] is not None else None
-        if af_ml is None:
-            return None
-        if isinstance(af_ml, str):
-            try:
-                af_ml = float(af_ml)
-            except (ValueError, TypeError):
-                return None
-
     # Get AFD entries - use .get() for safe access
     afd_entries = sample.get("AFD")
     if afd_entries is None:
@@ -109,16 +88,17 @@ def visualize_allele_frequency_distribution(record, sample_name):
                 # Skip malformed entries
                 continue
 
-    # Explicitly add ML estimate - use maximum probability from distribution
-    if afd_data:
-        ml_prob = max(d["Probability"] for d in afd_data)
-    else:
-        ml_prob = 1.0
+    # Only render the plot when the posterior distribution is available
+    if not afd_data:
+        return None
+
+    # Take ML estimate from the distribution - the entry with maximum probability
+    ml_entry = max(afd_data, key=lambda d: d["Probability"])
 
     afd_data.append(
         {
-            "Allele Frequency": af_ml,
-            "Probability": ml_prob,
+            "Allele Frequency": ml_entry["Allele Frequency"],
+            "Probability": ml_entry["Probability"],
             "Type": "ML Estimate",
         }
     )
@@ -176,7 +156,9 @@ def visualize_observations(record, sample_name):
     obs = sample.get("OBS")
 
     # Handle OBS - get the string value
-    if isinstance(obs, str):
+    if obs is None:
+        obs_string = ""
+    elif isinstance(obs, str):
         obs_string = obs
     elif isinstance(obs, Sequence):
         if len(obs) == 0:
