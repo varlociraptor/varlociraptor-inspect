@@ -7,8 +7,6 @@ from typing import Sequence
 
 def phred_to_prob(phred_value: float) -> float:
     """Convert PHRED score to probability"""
-    if phred_value is None:
-        return None
     return float(10 ** (-phred_value / 10))
 
 
@@ -92,7 +90,7 @@ class AFDData:
 
     @classmethod
     def _parse_afd_entries(
-        cls, sample_name: str, afd_entries: list
+        cls, sample_name: str, afd_entries: "Sequence[object]"
     ) -> "AFDData | None":
         entries = []
         for entry in afd_entries:
