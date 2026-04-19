@@ -3,6 +3,7 @@ import pandas as pd
 import re
 from dataclasses import dataclass
 from typing import Sequence
+from typing import Self
 
 
 def phred_to_prob(phred_value: float) -> float:
@@ -69,7 +70,7 @@ class AFDData:
     entries: list[AFDEntry]
 
     @classmethod
-    def from_record(cls, record, sample_name: str) -> "AFDData | None":
+    def from_record(cls, record, sample_name: str) -> Self | None:
         """Parse AFD field from a pysam VariantRecord sample."""
         sample = record.samples[sample_name]
         afd_entries = sample.get("AFD")
@@ -82,7 +83,7 @@ class AFDData:
         return cls._parse_afd_entries(sample_name, afd_entries)
 
     @classmethod
-    def from_string(cls, sample_name: str, afd_string: str) -> "AFDData | None":
+    def from_string(cls, sample_name: str, afd_string: str) -> Self | None:
         """Build AFDData directly from a raw AFD string (e.g. from URL params)."""
         if not afd_string or afd_string == ".":
             return None
@@ -91,21 +92,22 @@ class AFDData:
     @classmethod
     def _parse_afd_entries(
         cls, sample_name: str, afd_entries: "Sequence[object]"
-    ) -> "AFDData | None":
+    ) -> Self | None:
         entries = []
         for entry in afd_entries:
             if not isinstance(entry, str):
                 continue
             for part in entry.split(","):
                 if "=" not in part:
-                    continue
+                    raise ValueError(
+                        f"Invalid AFD format in '{part}': expected 'freq=phred'"
+                    )
                 try:
                     freq, phred = part.split("=")
                     freq = float(freq)
-                    prob = float(phred_to_prob(float(phred)))
-                    entries.append(AFDEntry(allele_frequency=freq, probability=prob))
-                except (ValueError, TypeError):
-                    continue
+                    prob = phred_to_prob(float(phred))
+                except (ValueError, TypeError) as e:
+                    raise ValueError(f"Failed to parse AFD entry '{part}': {e}")
         if not entries:
             return None
         ml = max(entries, key=lambda e: e.probability)
