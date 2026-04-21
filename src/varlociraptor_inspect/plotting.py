@@ -31,13 +31,15 @@ class ProbData:
             event_name = key.removeprefix("PROB_")
             if isinstance(value, Sequence) and not isinstance(value, str):
                 if len(value) == 0:
-                    continue
+                    raise ValueError(f"Empty sequence for PROB field '{event_name}'")
                 value = value[0]
             if isinstance(value, str):
                 try:
                     value = float(value)
                 except ValueError:
-                    continue
+                    raise ValueError(
+                        f"Cannot convert PROB value '{value}' to float for event '{event_name}'"
+                    )
             probability = 0.0 if value == float("inf") else float(phred_to_prob(value))
             entries.append(ProbEntry(event=event_name, probability=probability))
         return cls(entries=entries)
@@ -96,7 +98,9 @@ class AFDData:
         entries = []
         for entry in afd_entries:
             if not isinstance(entry, str):
-                continue
+                raise ValueError(
+                    f"AFD entry must be a string, got {type(entry).__name__}: {entry!r}"
+                )
             for part in entry.split(","):
                 if "=" not in part:
                     raise ValueError(
