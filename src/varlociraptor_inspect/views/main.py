@@ -81,9 +81,16 @@ def build_query_string(
 
 def render_copy_link_button(query_string: str) -> None:
     """Show a shareable link to this record. st.code has a built-in copy-to-clipboard button."""
-    host = st.context.headers.get("Host", "localhost:8501")
-    scheme = "http" if host.startswith(("localhost", "127.0.0.1")) else "https"
-    url = f"{scheme}://{host}/?{query_string}"
+    try:
+        import js  # type: ignore[import-not-found]
+
+        origin = str(js.location.origin)
+        pathname = str(js.location.pathname)
+        url = f"{origin}{pathname}?{query_string}"
+    except ImportError:
+        host = st.context.headers.get("Host", "localhost:8501")
+        scheme = "http" if host.startswith(("localhost", "127.0.0.1")) else "https"
+        url = f"{scheme}://{host}/?{query_string}"
     st.caption("Shareable link to this record:")
     st.code(url, language=None, wrap_lines=True)
 
@@ -112,8 +119,15 @@ async def render_webllm_chat(description: str, key: str) -> None:
         st.session_state[history_key] = []
 
     system_prompt = (
-        description
-        + "\n\nYou are a helpful assistant answering questions about the variant "
+        description + "\n\nThere is exactly ONE variant described above. The 'Event "
+        "probabilities' section lists different hypotheses about that SAME "
+        "single variant (e.g. is it somatic, absent, an artifact, loss of "
+        "heterozygosity) - these are not separate variants, and there is no "
+        "'the LOH variant' or 'the artifact variant' as a distinct thing. When "
+        "asked which hypothesis is most likely, compare the probabilities and "
+        "name the one with the highest value, still referring to it as the "
+        "same single variant under different hypotheses.\n\n"
+        "You are a helpful assistant answering questions about the variant "
         "record above. Always cite the exact numbers from the data above, copied "
         "verbatim - never estimate, round, or recompute them yourself. When asked "
         "how many reads support the variant, use the 'ALT-supporting reads' count, "
@@ -131,11 +145,18 @@ async def render_webllm_chat(description: str, key: str) -> None:
         "reasoning in 2-3 sentences, referencing the specific numbers that led to "
         "your answer. Do not give generic definitions - explain what these "
         "specific numbers imply about this specific variant. If something is not "
-        "present in the data, say so instead of guessing."
+        "present in the data, say so instead of guessing. Never invent or "
+        "calculate a ratio, percentage, or fraction that is not explicitly "
+        "written in the data above - only copy numbers verbatim.\n\n"
+        "Below are two examples of the correct answer format and reasoning "
+        "style. These examples use invented placeholder numbers unrelated to "
+        "the real record above - never reuse these specific numbers, only "
+        "copy the reasoning pattern."
     )
 
     models = {
         "Llama 3.2 1B (recommended, ~0.9GB)": "Llama-3.2-1B-Instruct-q4f16_1-MLC",
+        "Gemma 2 2B (~2GB)": "gemma-2-2b-it-q4f16_1-MLC",
         "Phi-3.5 mini (better quality, ~2.2GB)": "Phi-3.5-mini-instruct-q4f16_1-MLC",
         "Qwen2.5 0.5B (fastest, less accurate)": "Qwen2.5-0.5B-Instruct-q4f16_1-MLC",
     }
@@ -174,7 +195,6 @@ async def render_webllm_chat(description: str, key: str) -> None:
             st.session_state[engine_ready_key] = True
             st.rerun()
         return
-
     for msg in st.session_state[history_key]:
         with st.chat_message(msg["role"]):
             st.write(msg["content"])
@@ -190,7 +210,32 @@ async def render_webllm_chat(description: str, key: str) -> None:
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
                 engine = js.globalThis._webllmEngine
+                few_shot_examples = [
+                    {
+                        "role": "user",
+                        "content": "How many reads support the variant in sample X?",
+                    },
+                    {
+                        "role": "assistant",
+                        "content": (
+                            "4 reads support the ALT (variant) allele in sample X. "
+                            "This is the 'ALT-supporting reads' count copied directly "
+                            "from the data above, not calculated or estimated."
+                        ),
+                    },
+                    {"role": "user", "content": "Is there a strand bias?"},
+                    {
+                        "role": "assistant",
+                        "content": (
+                            "No, there is no meaningful evidence of strand bias. "
+                            "PROB_ARTIFACT is very low (close to 0). A low "
+                            "PROB_ARTIFACT means little to no evidence of bias - a "
+                            "high PROB_ARTIFACT would indicate bias instead."
+                        ),
+                    },
+                ]
                 messages = [{"role": "system", "content": system_prompt}]
+                messages.extend(few_shot_examples)
                 messages.extend(st.session_state[history_key])
                 opts = to_js(
                     {"messages": messages, "temperature": 0},
