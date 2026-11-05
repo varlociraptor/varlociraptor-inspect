@@ -4,22 +4,12 @@ import tempfile
 from collections.abc import Mapping, Sequence
 from itertools import chain
 import hashlib
+import pysam
 import streamlit as st
 
 from varlociraptor_inspect import plotting
 from varlociraptor_inspect.description import build_record_description
 from varlociraptor_inspect.plotting import AFDData, OBSData, ProbData
-
-try:
-    import pysam
-except ImportError:
-    st.error(
-        "The component 'pysam' could not be loaded. If you are using the web "
-        "version, please use the latest version of your web browser and reload "
-        "the page. If you are running the app locally, please make sure that "
-        "pysam is installed."
-    )
-    st.stop()
 
 
 def normalize_whitespace(text: str) -> str:
