@@ -422,7 +422,7 @@ def visualize_observations(obs_data: OBSData):
                 stack="zero",
                 scale=alt.Scale(domain=[0, max_count]),
                 title="Count" if show_y_axis else None,
-                axis=None if not show_y_axis else alt.Axis(),
+                axis=None if not show_y_axis else alt.Axis(tickMinStep=1, format="d"),
             ),
             alt.Order("obs_index:Q"),
             alt.Tooltip(["Metric", "Category", "Count"]),
