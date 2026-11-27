@@ -1,0 +1,30 @@
+name: Package for local use
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Create zip
+        run: |
+          mkdir varlociraptor-inspect-local
+          cp -r index.html LICENSE README.md src varlociraptor-inspect-local/
+          find varlociraptor-inspect-local -name "__pycache__" -type d -prune -exec rm -rf {} +
+          zip -r varlociraptor-inspect-local.zip varlociraptor-inspect-local
+      - uses: actions/upload-artifact@v4
+        with:
+          name: varlociraptor-inspect-local
+          path: varlociraptor-inspect-local.zip
+      - name: Attach to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: varlociraptor-inspect-local.zip
